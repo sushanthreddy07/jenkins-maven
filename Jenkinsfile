@@ -1,20 +1,16 @@
 pipeline {
     agent { label 'slave' }
-
     environment {
         APP_SERVER_IP   = '172.31.1.156'
         APP_SERVER_USER = 'ubuntu'
         DEPLOY_DIR      = '/opt/application'
     }
-
     stages {
-
         stage('Checkout Code') {
             steps {
                 checkout scm
             }
         }
-
         stage('Build & Test') {
             steps {
                 sh 'mvn clean test'
@@ -25,7 +21,13 @@ pipeline {
                 }
             }
         }
-
+        stage('SonarQube Analysis') {
+            steps {
+                withSonarQubeEnv('SonarQube') {
+                    sh 'mvn sonar:sonar'
+                }
+            }
+        }
         stage('Security Scan - Trivy') {
             steps {
                 sh '''
@@ -40,37 +42,29 @@ pipeline {
                 sh 'trivy fs --exit-code 1 --severity CRITICAL .'
             }
         }
-
         stage('Package') {
             steps {
                 sh 'mvn package -DskipTests'
-                archiveArtifacts artifacts: 'target/*.jar',
-                    fingerprint: true
+                archiveArtifacts artifacts: 'target/*.jar', fingerprint: true
             }
         }
-
         stage('Deploy to App Server') {
             when {
                 branch 'main'
             }
             steps {
                 sshagent(credentials: ['app-server-ssh']) {
-                    sh '''
-                        scp -o StrictHostKeyChecking=no \
-                            target/*.jar \
-                            ubuntu@''' + env.APP_SERVER_IP + ''':/opt/application/app.jar
-                    '''
-                    sh '''
-                        ssh -o StrictHostKeyChecking=no \
-                            ubuntu@''' + env.APP_SERVER_IP + ''' \
-                            "cd /opt/application && nohup java -jar app.jar > app.log 2>&1 &"
-                    '''
+                    sh """
+                        scp -o StrictHostKeyChecking=no target/*.jar ${APP_SERVER_USER}@${APP_SERVER_IP}:${DEPLOY_DIR}/app.jar
+                    """
+                    sh """
+                        ssh -o StrictHostKeyChecking=no ${APP_SERVER_USER}@${APP_SERVER_IP} 'cd ${DEPLOY_DIR} && nohup java -jar app.jar > app.log 2>&1 &'
+                    """
                 }
             }
         }
     }
-
- post {
+    post {
         success {
             mail to: 'rachalasushanth007@gmail.com',
                  subject: "SUCCESS: ${env.JOB_NAME} #${env.BUILD_NUMBER}",
@@ -82,3 +76,4 @@ pipeline {
                  body: "Build failed.\nCheck: ${env.BUILD_URL}"
         }
     }
+}
