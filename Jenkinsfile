@@ -49,21 +49,22 @@ pipeline {
             }
         }
         stage('Deploy to App Server') {
-            when {
-                branch 'main'
-            }
-            steps {
-                sshagent(credentials: ['app-server-ssh']) {
-                    sh """
-                        scp -o StrictHostKeyChecking=no target/*.jar ${APP_SERVER_USER}@${APP_SERVER_IP}:${DEPLOY_DIR}/app.jar
-                    """
-                    sh """
-                        ssh -o StrictHostKeyChecking=no ${APP_SERVER_USER}@${APP_SERVER_IP} 'cd ${DEPLOY_DIR} && nohup java -jar app.jar > app.log 2>&1 &'
-                    """
-                }
-            }
+    when {
+        branch 'main'
+    }
+    steps {
+        sshagent(credentials: ['app-server-ssh']) {
+            sh """
+                scp -o StrictHostKeyChecking=no target/*.jar \
+                    ${APP_SERVER_USER}@${APP_SERVER_IP}:${DEPLOY_DIR}/app.jar
+            """
+            sh """
+                ssh -o StrictHostKeyChecking=no ${APP_SERVER_USER}@${APP_SERVER_IP} \
+                    'cd ${DEPLOY_DIR} && sudo kill \$(sudo lsof -t -i:8080) 2>/dev/null || true && nohup java -jar app.jar > app.log 2>&1 &'
+            """
         }
     }
+}
     post {
         success {
             mail to: 'rachalasushanth007@gmail.com',
